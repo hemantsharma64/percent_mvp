@@ -218,13 +218,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const today = format(new Date(), 'yyyy-MM-dd');
       
-      console.log(`Manual task generation triggered for user ${userId}`);
+      console.log(`🚀 Manual task generation triggered for user ${userId} on ${today}`);
+      
+      // Check if user has journal entries
+      const journals = await storage.getUserJournals(userId, 10);
+      console.log(`📖 Found ${journals.length} journal entries for user`);
+      
+      if (journals.length === 0) {
+        console.log(`❌ No journal entries found for user ${userId}`);
+        return res.json({ 
+          message: "Please write at least one journal entry before generating tasks", 
+          date: today,
+          tasksGenerated: 0 
+        });
+      }
+      
       await taskGenerator.generateTasksForUser(userId, today);
       
-      res.json({ message: "Tasks generated successfully", date: today });
+      // Verify tasks were created
+      const createdTasks = await storage.getTasksForDate(userId, today);
+      console.log(`✅ Generated ${createdTasks.length} tasks for user ${userId}`);
+      
+      res.json({ 
+        message: "Tasks generated successfully", 
+        date: today, 
+        tasksGenerated: createdTasks.length 
+      });
     } catch (error) {
-      console.error("Manual task generation error:", error);
-      res.status(500).json({ message: "Failed to generate tasks" });
+      console.error("❌ Manual task generation error:", error);
+      res.status(500).json({ message: "Failed to generate tasks", error: error.message });
     }
   });
 

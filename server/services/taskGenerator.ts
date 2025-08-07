@@ -1,21 +1,27 @@
 import { storage } from "../storage";
 import { aiService } from "./aiService";
 import { format, subDays } from "date-fns";
+import { db } from "../db";
+import { journals } from "@shared/schema";
+import { sql } from "drizzle-orm";
 
 export class TaskGenerator {
   async generateTasksForUser(userId: string, targetDate: string): Promise<void> {
     try {
-      console.log(`Generating tasks for user ${userId} for date ${targetDate}`);
+      console.log(`📨 Starting task generation for user ${userId} for date ${targetDate}`);
 
       // Get user data
       const userData = await this.getUserData(userId);
       
       if (!userData) {
-        console.log(`No data found for user ${userId}, skipping task generation`);
+        console.log(`❌ No data found for user ${userId}, skipping task generation`);
         return;
       }
 
+      console.log(`📈 User data retrieved: ${userData.recentJournals.length} recent journals, ${userData.goals.length} goals`);
+
       // Generate tasks using AI
+      console.log(`🤖 Calling AI service for task generation...`);
       const aiResponse = await aiService.generateTasksFromJournals(
         userData.recentJournals,
         userData.mediumJournals,
@@ -23,9 +29,15 @@ export class TaskGenerator {
         userData.goals
       );
 
+      console.log(`🎆 AI generated ${aiResponse.tasks.length} tasks`);
+
+      // Clear existing tasks for the date
+      const existingTasks = await storage.getTasksForDate(userId, targetDate);
+      console.log(`🗺 Found ${existingTasks.length} existing tasks for ${targetDate}`);
+
       // Save tasks
       for (const taskData of aiResponse.tasks) {
-        await storage.createTask({
+        const newTask = await storage.createTask({
           userId,
           date: targetDate,
           title: taskData.title,
@@ -36,19 +48,22 @@ export class TaskGenerator {
           completed: false,
           relatedGoalId: taskData.relatedGoalId || null,
         });
+        console.log(`✅ Created task: ${newTask.title}`);
       }
 
       // Save dashboard content
-      await storage.createDashboardContent({
+      const dashboardContent = await storage.createDashboardContent({
         userId,
         date: targetDate,
         dailyQuote: aiResponse.dailyQuote,
         focusArea: aiResponse.focusArea,
       });
+      console.log(`🗺 Saved dashboard content: "${aiResponse.dailyQuote.substring(0, 50)}..."`);
 
-      console.log(`Successfully generated ${aiResponse.tasks.length} tasks for user ${userId}`);
+      console.log(`✨ Successfully generated ${aiResponse.tasks.length} tasks for user ${userId}`);
     } catch (error) {
-      console.error(`Failed to generate tasks for user ${userId}:`, error);
+      console.error(`❌ Failed to generate tasks for user ${userId}:`, error);
+      throw error; // Re-throw to let caller handle it
     }
   }
 
@@ -116,15 +131,20 @@ export class TaskGenerator {
     try {
       // Get users who have written at least one journal entry in the last 30 days
       const thirtyDaysAgo = format(subDays(new Date(), 30), 'yyyy-MM-dd');
-      const recentJournals = await storage.getUserJournals("", 1000); // Get all recent journals
+      
+      // This is a workaround - we'll need to get all users and check their journals
+      // For now, let's get users from recent journals by getting all journal entries
+      // and extracting unique user IDs
+      const allJournals = await db.select({ userId: journals.userId, date: journals.date })
+        .from(journals)
+        .where(sql`${journals.date} >= ${thirtyDaysAgo}`);
       
       const activeUserIds = new Set<string>();
-      for (const journal of recentJournals) {
-        if (journal.date >= thirtyDaysAgo) {
-          activeUserIds.add(journal.userId);
-        }
+      for (const journal of allJournals) {
+        activeUserIds.add(journal.userId);
       }
       
+      console.log(`Found ${activeUserIds.size} active users with recent journal entries`);
       return Array.from(activeUserIds);
     } catch (error) {
       console.error("Error getting active users:", error);
