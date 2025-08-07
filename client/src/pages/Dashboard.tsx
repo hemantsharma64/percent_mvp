@@ -41,7 +41,7 @@ export default function Dashboard() {
 
   const generateTasksMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("POST", "/api/tasks/generate", {});
+      await apiRequest("POST", "/api/generate-tasks", {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard"] });

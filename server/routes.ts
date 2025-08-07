@@ -212,6 +212,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Manual task generation trigger (for testing)
+  app.post('/api/generate-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const today = format(new Date(), 'yyyy-MM-dd');
+      
+      console.log(`Manual task generation triggered for user ${userId}`);
+      await taskGenerator.generateTasksForUser(userId, today);
+      
+      res.json({ message: "Tasks generated successfully", date: today });
+    } catch (error) {
+      console.error("Manual task generation error:", error);
+      res.status(500).json({ message: "Failed to generate tasks" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
